@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1F3864">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OT Log">
+<title>Overtime &amp; Leave Log</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  :root {
+    --navy:   #1F3864;
+    --blue:   #2E75B6;
+    --green:  #548235;
+    --amber:  #ED7D31;
+    --red:    #C00000;
+    --light:  #F2F2F2;
+    --white:  #FFFFFF;
+    --gray:   #888888;
+    --border: #CCCCCC;
+    --radius: 10px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--light);
+    color: #222;
+    min-height: 100vh;
+    padding-bottom: calc(70px + var(--safe-bottom));
+  }
+
+  /* ── HEADER ─────────────────────────────────────────── */
+  header {
+    background: var(--navy);
+    color: white;
+    padding: 16px 16px 12px;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+  header .sub { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+  .sync-status { font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+  .sync-status.pending { color: #FFD700; }
+  .sync-status.error   { color: #FF6B6B; }
+
+  /* ── NAV TABS ────────────────────────────────────────── */
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--navy);
+    display: flex;
+    padding-bottom: var(--safe-bottom);
+    z-index: 100;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
+  }
+  nav button {
+    flex: 1; background: none; border: none; color: rgba(255,255,255,0.6);
+    padding: 10px 4px 8px;
+    font-size: 10px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    transition: color 0.15s;
+  }
+  nav button .icon { font-size: 20px; }
+  nav button.active { color: white; }
+  nav button.active .icon { transform: scale(1.1); }
+
+  /* ── SCREENS ─────────────────────────────────────────── */
+  .screen { display: none; padding: 16px; }
+  .screen.active { display: block; }
+
+  /* ── SUMMARY CARDS ───────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .card {
+    background: white; border-radius: var(--radius);
+    padding: 14px 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .card .label { font-size: 11px; color: var(--gray); text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .card .sub   { font-size: 12px; color: var(--gray); margin-top: 2px; }
+  .card.green .value { color: var(--green); }
+  .card.amber .value { color: var(--amber); }
+  .card.navy  .value { color: var(--navy);  }
+  .card.red   .value { color: var(--red);   }
+
+  /* ── SECTION TITLE ───────────────────────────────────── */
+  .section-title {
+    font-size: 13px; font-weight: 700; color: var(--navy);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 16px 0 10px;
+  }
+
+  /* ── FORM ────────────────────────────────────────────── */
+  .form-card {
+    background: white; border-radius: var(--radius);
+    padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    margin-bottom: 16px;
+  }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block; font-size: 12px; font-weight: 600;
+    color: var(--gray); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .form-row input, .form-row select, .form-row textarea {
+    width: 100%; padding: 11px 12px;
+    border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 16px; /* 16px prevents iOS zoom */
+    background: white; color: #222;
+    -webkit-appearance: none; appearance: none;
+  }
+  .form-row textarea { height: 72px; resize: vertical; }
+  .form-row input:focus, .form-row select:focus {
+    outline: none; border-color: var(--blue);
+  }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ── TOGGLE PILLS ────────────────────────────────────── */
+  .toggle-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle-btn {
+    padding: 9px 16px; border-radius: 20px;
+    border: 1.5px solid var(--border); background: white;
+    font-size: 14px; cursor: pointer; transition: all 0.15s;
+  }
+  .toggle-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
+
+  /* ── BUTTONS ─────────────────────────────────────────── */
+  .btn {
+    display: block; width: 100%; padding: 15px;
+    border-radius: var(--radius); border: none;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+    text-align: center; transition: opacity 0.15s;
+  }
+  .btn:active { opacity: 0.85; }
+  .btn-primary { background: var(--navy); color: white; }
+  .btn-green   { background: var(--green); color: white; }
+  .btn-amber   { background: var(--amber); color: white; }
+  .btn-outline { background: white; color: var(--navy); border: 2px solid var(--navy); }
+
+  /* ── QUICK ACTIONS ───────────────────────────────────── */
+  .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .quick-btn {
+    background: white; border: none; border-radius: var(--radius);
+    padding: 18px 12px; text-align: center; cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .quick-btn:active { transform: scale(0.97); }
+  .quick-btn .qi { font-size: 28px; display: block; margin-bottom: 6px; }
+  .quick-btn .ql { font-size: 12px; font-weight: 600; color: var(--navy); }
+
+  /* ── ENTRY LIST ──────────────────────────────────────── */
+  .entry-list { display: flex; flex-direction: column; gap: 8px; }
+  .entry-item {
+    background: white; border-radius: var(--radius);
+    padding: 12px 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border-left: 4px solid var(--border);
+  }
+  .entry-item.doil  { border-left-color: var(--blue); }
+  .entry-item.paid  { border-left-color: var(--amber); }
+  .entry-item.al    { border-left-color: var(--green); }
+  .entry-item .ei-date  { font-size: 11px; color: var(--gray); }
+  .entry-item .ei-title { font-size: 14px; font-weight: 600; margin: 3px 0; }
+  .entry-item .ei-meta  { font-size: 12px; color: var(--gray); }
+
+  /* ── OFFLINE BANNER ──────────────────────────────────── */
+  .offline-banner {
+    background: var(--amber); color: white;
+    padding: 8px 16px; font-size: 13px; text-align: center;
+    display: none;
+  }
+  .offline-banner.show { display: block; }
+
+  /* ── TOAST ───────────────────────────────────────────── */
+  #toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: #333; color: white; padding: 10px 20px;
+    border-radius: 20px; font-size: 14px; z-index: 999;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    max-width: 90%; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ── MODAL ───────────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 200; display: none; align-items: flex-end;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: white; border-radius: 16px 16px 0 0;
+    padding: 20px 16px calc(16px + var(--safe-bottom));
+    width: 100%; max-height: 85vh; overflow-y: auto;
+  }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; color: var(--navy); }
+  .modal-close {
+    float: right; background: none; border: none;
+    font-size: 24px; cursor: pointer; color: var(--gray); margin-top: -4px;
+  }
+
+  /* ── AUTH ─────────────────────────────────────────────── */
+  .auth-screen {
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 32px 24px; text-align: center;
+    background: var(--navy);
+  }
+  .auth-screen .logo { font-size: 64px; margin-bottom: 16px; }
+  .auth-screen h1    { color: white; font-size: 24px; margin-bottom: 8px; }
+  .auth-screen p     { color: rgba(255,255,255,0.7); font-size: 14px; margin-bottom: 32px; }
+  .auth-screen .btn  { max-width: 280px; }
+
+  .loading {
+    position: fixed; inset: 0; background: var(--navy);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 500;
+  }
+  .loading .spinner {
+    width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3);
+    border-top-color: white; border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin-bottom: 16px;
+  }
+  .loading p { color: rgba(255,255,255,0.8); font-size: 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <p>Loading…</p>
+</div>
+
+<!-- Auth screen (shown until signed in) -->
+<div id="auth-screen" class="auth-screen" style="display:none">
+  <div class="logo">⏱</div>
+  <h1>Overtime &amp; Leave Log</h1>
+  <p>Sign in with your Google account to access your overtime data.</p>
+  <button class="btn btn-primary" onclick="signIn()" style="background:white;color:#1F3864;max-width:280px">
+    Sign in with Google
+  </button>
+  <p style="margin-top:24px;font-size:12px;color:rgba(255,255,255,0.4)">
+    Data stored in your Google Sheets
+  </p>
+</div>
+
+<!-- Main app -->
+<div id="app" style="display:none">
+  <div class="offline-banner" id="offline-banner">📶 Offline — entries will sync when connected</div>
+
+  <header>
+    <h1>⏱ Overtime &amp; Leave Log</h1>
+    <div class="sub" id="header-date"></div>
+    <div class="sync-status" id="sync-status"></div>
+  </header>
+
+  <!-- ── SCREEN: SUMMARY ───────────────────────────────── -->
+  <div class="screen active" id="screen-summary">
+    <div id="summary-loading" style="text-align:center;padding:32px;color:var(--gray)">Loading…</div>
+    <div id="summary-content" style="display:none">
+      <div class="section-title">DOIL Balance</div>
+      <div class="cards">
+        <div class="card navy">
+          <div class="label">Available</div>
+          <div class="value" id="s-doil-avail">–</div>
+          <div class="sub">days</div>
+        </div>
+        <div class="card green">
+          <div class="label">Balance</div>
+          <div class="value" id="s-doil-bal">–</div>
+          <div class="sub" id="s-doil-bal-sub">days remaining</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card amber">
+          <div class="label">Taken</div>
+          <div class="value" id="s-doil-taken">–</div>
+          <div class="sub">days this year</div>
+        </div>
+        <div class="card">
+          <div class="label">Pending</div>
+          <div class="value" id="s-doil-pending">–</div>
+          <div class="sub">days booked</div>
+        </div>
+      </div>
+
+      <div class="section-title">Annual Leave</div>
+      <div class="cards">
+        <div class="card navy">
+          <div class="label">Entitlement</div>
+          <div class="value" id="s-al-entitle">–</div>
+          <div class="sub">days/year</div>
+        </div>
+        <div class="card green">
+          <div class="label">Remaining</div>
+          <div class="value" id="s-al-rem">–</div>
+          <div class="sub" id="s-al-rem-sub">days left</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card amber">
+          <div class="label">Taken</div>
+          <div class="value" id="s-al-taken">–</div>
+          <div class="sub">days this year</div>
+        </div>
+        <div class="card">
+          <div class="label">OT Paid (hrs)</div>
+          <div class="value" id="s-paid-hrs" style="font-size:22px">–</div>
+          <div class="sub">non-rostered</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SCREEN: LOG TODAY ─────────────────────────────── -->
+  <div class="screen" id="screen-log">
+    <div class="form-card">
+      <div class="form-row">
+        <label>Date</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="form-row">
+        <label>Day Type <span id="f-daytype-auto" style="color:var(--blue);font-size:11px"></span></label>
+        <div class="toggle-group" id="f-daytype-group">
+          <button class="toggle-btn active" data-val="Rostered" onclick="setDayType('Rostered',this)">Rostered</button>
+          <button class="toggle-btn" data-val="Non-Rostered" onclick="setDayType('Non-Rostered',this)">Non-Rostered</button>
+        </div>
+      </div>
+      <div class="form-row row-2">
+        <div>
+          <label>Start</label>
+          <input type="time" id="f-start" value="09:00">
+        </div>
+        <div>
+          <label>End</label>
+          <input type="time" id="f-end" value="18:00">
+        </div>
+      </div>
+      <div class="form-row row-2">
+        <div>
+          <label>Start TZ</label>
+          <select id="f-start-tz">
+            <option value="GMT">GMT</option>
+            <option value="BST" selected>BST (UK Summer)</option>
+            <option value="CET">CET (Central EU)</option>
+            <option value="CEST">CEST (Central EU Summer)</option>
+            <option value="EET">EET (Eastern EU)</option>
+            <option value="EEST">EEST (Eastern EU Summer)</option>
+            <option value="IST">IST (Ireland)</option>
+            <option value="AST">AST (Qatar/Doha)</option>
+            <option value="WGT">WGT (Greenland)</option>
+            <option value="WGST">WGST (Greenland Summer)</option>
+          </select>
+        </div>
+        <div>
+          <label>End TZ</label>
+          <select id="f-end-tz">
+            <option value="GMT">GMT</option>
+            <option value="BST" selected>BST (UK Summer)</option>
+            <option value="CET">CET (Central EU)</option>
+            <option value="CEST">CEST (Central EU Summer)</option>
+            <option value="EET">EET (Eastern EU)</option>
+            <option value="EEST">EEST (Eastern EU Summer)</option>
+            <option value="IST">IST (Ireland)</option>
+            <option value="AST">AST (Qatar/Doha)</option>
+            <option value="WGT">WGT (Greenland)</option>
+            <option value="WGST">WGST (Greenland Summer)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Location / Deployment</label>
+        <select id="f-location">
+          <option value="">Select or type below…</option>
+          <option>London</option>
+          <option>Ukraine</option>
+          <option>Greenland</option>
+          <option>Bosnia</option>
+          <option>Doha</option>
+          <option>Jordan</option>
+          <option>Belfast / Northern Ireland</option>
+          <option>Ireland</option>
+          <option>Germany / Berlin</option>
+          <option>France / Paris</option>
+          <option>Brussels</option>
+          <option>Vienna</option>
+          <option>Warsaw</option>
+          <option>Travel</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Location (free text)</label>
+        <input type="text" id="f-location-text" placeholder="Or type location here">
+      </div>
+
+      <div id="f-ot-type-row" class="form-row" style="display:none">
+        <label>Overtime Type</label>
+        <div class="toggle-group" id="f-ottype-group">
+          <button class="toggle-btn active" data-val="DOIL" onclick="setOTType('DOIL',this)">DOIL</button>
+          <button class="toggle-btn" data-val="Paid" onclick="setOTType('Paid',this)">Paid (×1.25)</button>
+        </div>
+      </div>
+
+      <div class="form-row" id="f-calc-preview" style="background:#F0F4FF;border-radius:8px;padding:10px;display:none">
+        <div style="font-size:12px;color:var(--gray)">Calculated</div>
+        <div id="f-calc-text" style="font-size:16px;font-weight:600;color:var(--navy);margin-top:4px"></div>
+      </div>
+
+      <div class="form-row">
+        <label>Notes</label>
+        <textarea id="f-notes" placeholder="Deployment name, context…"></textarea>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="submitWorkEntry()">Save Entry</button>
+  </div>
+
+  <!-- ── SCREEN: LEAVE & DOIL ──────────────────────────── -->
+  <div class="screen" id="screen-leave">
+    <div class="section-title">Quick Log</div>
+    <div class="quick-grid">
+      <button class="quick-btn" onclick="showModal('doil-modal')">
+        <span class="qi">🏖</span>
+        <span class="ql">Log DOIL Day</span>
+      </button>
+      <button class="quick-btn" onclick="showModal('al-modal')">
+        <span class="qi">🌴</span>
+        <span class="ql">Log Annual Leave</span>
+      </button>
+    </div>
+
+    <div class="section-title">Recent DOIL Taken</div>
+    <div class="entry-list" id="doil-list">
+      <div style="color:var(--gray);font-size:13px;padding:8px">Loading…</div>
+    </div>
+
+    <div class="section-title" style="margin-top:16px">Recent Annual Leave</div>
+    <div class="entry-list" id="al-list">
+      <div style="color:var(--gray);font-size:13px;padding:8px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── SCREEN: RECENT ENTRIES ────────────────────────── -->
+  <div class="screen" id="screen-entries">
+    <div class="section-title">This Month's OT Entries</div>
+    <div class="entry-list" id="entries-list">
+      <div style="color:var(--gray);font-size:13px;padding:8px">Loading…</div>
+    </div>
+    <div id="queue-section" style="display:none">
+      <div class="section-title" style="color:var(--amber)">⏳ Offline Queue</div>
+      <div class="entry-list" id="queue-list"></div>
+      <button class="btn btn-amber" style="margin-top:12px" onclick="syncQueue()">Sync Now</button>
+    </div>
+  </div>
+
+  <!-- Bottom nav -->
+  <nav>
+    <button class="active" id="nav-summary" onclick="showScreen('summary')">
+      <span class="icon">📊</span>Summary
+    </button>
+    <button id="nav-log" onclick="showScreen('log')">
+      <span class="icon">➕</span>Log Day
+    </button>
+    <button id="nav-leave" onclick="showScreen('leave')">
+      <span class="icon">🏖</span>Leave
+    </button>
+    <button id="nav-entries" onclick="showScreen('entries')">
+      <span class="icon">📋</span>Entries
+    </button>
+  </nav>
+</div>
+
+<!-- DOIL Modal -->
+<div class="modal-overlay" id="doil-modal">
+  <div class="modal">
+    <h2>Log DOIL Day <button class="modal-close" onclick="hideModal('doil-modal')">×</button></h2>
+    <div class="form-row">
+      <label>Date</label>
+      <input type="date" id="doil-date">
+    </div>
+    <div class="form-row">
+      <label>Hours (default 8)</label>
+      <input type="number" id="doil-hours" value="8" min="1" max="16" step="0.5">
+    </div>
+    <div class="form-row">
+      <label>Notes</label>
+      <input type="text" id="doil-notes" placeholder="Optional">
+    </div>
+    <button class="btn btn-primary" onclick="submitDOIL()">Log DOIL Day</button>
+  </div>
+</div>
+
+<!-- Annual Leave Modal -->
+<div class="modal-overlay" id="al-modal">
+  <div class="modal">
+    <h2>Log Annual Leave <button class="modal-close" onclick="hideModal('al-modal')">×</button></h2>
+    <div class="form-row row-2">
+      <div>
+        <label>From</label>
+        <input type="date" id="al-start">
+      </div>
+      <div>
+        <label>To</label>
+        <input type="date" id="al-end">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Hours (leave blank to auto-calculate)</label>
+      <input type="number" id="al-hours" placeholder="Auto" min="1" step="0.5">
+    </div>
+    <div class="form-row">
+      <label>Notes</label>
+      <input type="text" id="al-notes" placeholder="Optional">
+    </div>
+    <button class="btn btn-green" onclick="submitAL()">Log Annual Leave</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG — EDIT THIS BEFORE DEPLOYING ─────────────────────
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxGDbLJQfLxH5Zb8is0dyjxiuRnm-WDv1XUeGkY_2CxcWw6zM3KmSXd6mWOpjPxiHcnAA/exec";
+const GOOGLE_CLIENT_ID = "134498048358-nukqbgaj3si4fkcc2d49sgfs9m7n23h3.apps.googleusercontent.com";
+// ────────────────────────────────────────────────────────────
+
+const TZ_OFFSETS = {
+  GMT:0,UTC:0,BST:1,CET:1,CEST:2,EET:2,EEST:3,IST:1,AST:3,WGT:-3,WGST:-2
+};
+
+let authToken = null;
+let isOnline = navigator.onLine;
+let DB; // IndexedDB reference
+
+// ── INITIALISE ───────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  await initDB();
+  await initAuth();
+  registerSW();
+  updateOnlineStatus();
+  window.addEventListener('online',  () => { isOnline = true;  updateOnlineStatus(); syncQueue(); });
+  window.addEventListener('offline', () => { isOnline = false; updateOnlineStatus(); });
+
+  // Set today's date in form fields
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value     = today;
+  document.getElementById('doil-date').value  = today;
+  document.getElementById('al-start').value   = today;
+  document.getElementById('al-end').value     = today;
+  document.getElementById('header-date').textContent = new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+
+  // Auto-recalculate preview when times change
+  ['f-start','f-end','f-start-tz','f-end-tz'].forEach(id => {
+    document.getElementById(id).addEventListener('change', updatePreview);
+  });
+  document.getElementById('f-date').addEventListener('change', onDateChange);
+  document.getElementById('f-daytype-group').querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      updateOTTypeVisibility();
+      updatePreview();
+    });
+  });
+});
+
+// ── SERVICE WORKER ───────────────────────────────────────────
+function registerSW() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(console.error);
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data.type === 'SYNC_NOW') syncQueue();
+    });
+  }
+}
+
+// ── INDEXED DB (offline queue) ───────────────────────────────
+function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('ot-log', 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('queue')) {
+        db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = e => { DB = e.target.result; resolve(); };
+    req.onerror   = e => reject(e);
+  });
+}
+
+function queueEntry(action, data) {
+  return new Promise((resolve, reject) => {
+    const tx = DB.transaction('queue', 'readwrite');
+    tx.objectStore('queue').add({ action, data, ts: new Date().toISOString() });
+    tx.oncomplete = () => { updateQueueStatus(); resolve(); };
+    tx.onerror    = e => reject(e);
+  });
+}
+
+function getQueue() {
+  return new Promise((resolve) => {
+    const tx = DB.transaction('queue', 'readonly');
+    const req = tx.objectStore('queue').getAll();
+    req.onsuccess = () => resolve(req.result);
+  });
+}
+
+function clearQueueItem(id) {
+  return new Promise((resolve) => {
+    const tx = DB.transaction('queue', 'readwrite');
+    tx.objectStore('queue').delete(id);
+    tx.oncomplete = resolve;
+  });
+}
+
+async function updateQueueStatus() {
+  const q = await getQueue();
+  const el = document.getElementById('sync-status');
+  if (q.length > 0) {
+    el.textContent = `⏳ ${q.length} entr${q.length===1?'y':'ies'} waiting to sync`;
+    el.className = 'sync-status pending';
+    document.getElementById('queue-section').style.display = 'block';
+  } else {
+    el.textContent = '✓ All entries synced';
+    el.className = 'sync-status';
+    document.getElementById('queue-section').style.display = 'none';
+  }
+}
+
+async function syncQueue() {
+  if (!isOnline || !authToken) return;
+  const q = await getQueue();
+  if (q.length === 0) return;
+  setSyncStatus(`Syncing ${q.length} queued entries…`);
+  let synced = 0;
+  for (const item of q) {
+    try {
+      await apiPost(item.action, item.data);
+      await clearQueueItem(item.id);
+      synced++;
+    } catch (e) {
+      console.error('Sync failed for item', item.id, e);
+    }
+  }
+  if (synced > 0) {
+    showToast(`✓ Synced ${synced} entr${synced===1?'y':'ies'}`);
+    await loadSummary();
+    await loadEntries();
+  }
+  updateQueueStatus();
+}
+
+// ── GOOGLE AUTH ───────────────────────────────────────────────
+async function initAuth() {
+  // Try to restore token from sessionStorage
+  const stored = sessionStorage.getItem('ot_token');
+  if (stored) {
+    authToken = stored;
+    await showApp();
+    return;
+  }
+  // Check for OAuth callback
+  const params = new URLSearchParams(window.location.hash.substring(1));
+  if (params.get('access_token')) {
+    authToken = params.get('access_token');
+    sessionStorage.setItem('ot_token', authToken);
+    window.history.replaceState({}, '', window.location.pathname);
+    await showApp();
+    return;
+  }
+  // Show auth screen
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+function signIn() {
+  const params = new URLSearchParams({
+    client_id:    GOOGLE_CLIENT_ID,
+    redirect_uri: window.location.origin + window.location.pathname,
+    response_type:'token',
+    scope:        'https://www.googleapis.com/auth/spreadsheets',
+    prompt:       'consent'
+  });
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params;
+}
+
+async function showApp() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  await Promise.all([loadSummary(), loadEntries(), loadLeaveLists()]);
+  updateQueueStatus();
+}
+
+// ── API CALLS ─────────────────────────────────────────────────
+async function apiGet(action, params={}) {
+  const url = new URL(APPS_SCRIPT_URL);
+  url.searchParams.set('action', action);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
+  const res = await fetch(url, {
+    headers: authToken ? { Authorization: 'Bearer ' + authToken } : {}
+  });
+  return res.json();
+}
+
+async function apiPost(action, data) {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(authToken ? { Authorization: 'Bearer ' + authToken } : {})
+    },
+    body: JSON.stringify({ action, data })
+  });
+  return res.json();
+}
+
+// ── LOAD SUMMARY ─────────────────────────────────────────────
+async function loadSummary() {
+  try {
+    const data = await apiGet('getSummary');
+    if (!data.ok) return;
+    const d = data.doil, al = data.al;
+    document.getElementById('s-doil-avail').textContent   = d.balanceDays >= 0 ? d.totalAvail/8 : '–';
+    document.getElementById('s-doil-bal').textContent     = formatDays(d.balanceDays);
+    document.getElementById('s-doil-taken').textContent   = formatDays(d.taken/8);
+    document.getElementById('s-doil-pending').textContent = formatDays(d.pending/8);
+    document.getElementById('s-al-entitle').textContent   = formatDays(al.entitlement/8);
+    document.getElementById('s-al-rem').textContent       = formatDays(al.remainingDays);
+    document.getElementById('s-al-taken').textContent     = formatDays(al.taken/8);
+    document.getElementById('s-paid-hrs').textContent     = data.paid.hours2026 + 'h';
+    document.getElementById('summary-loading').style.display = 'none';
+    document.getElementById('summary-content').style.display = 'block';
+    // Colour the balance red if low
+    const balEl = document.getElementById('s-doil-bal');
+    balEl.closest('.card').className = 'card ' + (d.balanceDays <= 8 ? 'amber' : 'green');
+  } catch(e) { console.error('loadSummary', e); }
+}
+
+function formatDays(n) {
+  if (n === undefined || n === null || isNaN(n)) return '–';
+  const rounded = Math.round(n * 2) / 2;
+  if (rounded === Math.floor(rounded)) return String(rounded);
+  return rounded.toFixed(1);
+}
+
+// ── LOAD ENTRIES ──────────────────────────────────────────────
+async function loadEntries() {
+  const now = new Date();
+  try {
+    const data = await apiGet('getMonthSummary', { year: now.getFullYear(), month: now.getMonth()+1 });
+    const list = document.getElementById('entries-list');
+    if (!data.ok || !data.entries.length) {
+      list.innerHTML = '<div style="color:var(--gray);font-size:13px;padding:8px">No entries this month yet.</div>';
+      return;
+    }
+    list.innerHTML = data.entries.map(e => `
+      <div class="entry-item ${e.otType === 'DOIL' ? 'doil' : 'paid'}">
+        <div class="ei-date">${e.date} · ${e.dayType}</div>
+        <div class="ei-title">${e.location || 'No location'}</div>
+        <div class="ei-meta">${e.startTime}–${e.endTime} ${e.startTZ} · <strong>${e.otHours}hrs OT</strong> · ${e.otType}${e.notes ? ' · ' + e.notes.substring(0,40) : ''}</div>
+      </div>`).join('');
+  } catch(e) { console.error('loadEntries', e); }
+}
+
+// ── LOAD LEAVE LISTS ──────────────────────────────────────────
+async function loadLeaveLists() {
+  try {
+    const [doilData, alData] = await Promise.all([apiGet('getDOILLog'), apiGet('getALLog')]);
+    const recent5 = arr => arr.slice(-5).reverse();
+
+    const doilList = document.getElementById('doil-list');
+    const doilItems = recent5(doilData.entries||[]);
+    doilList.innerHTML = doilItems.length
+      ? doilItems.map(e => `<div class="entry-item doil"><div class="ei-date">${e.date}</div><div class="ei-title">${e.hours}hrs DOIL</div><div class="ei-meta">${e.status}${e.notes?' · '+e.notes:''}</div></div>`).join('')
+      : '<div style="color:var(--gray);font-size:13px;padding:8px">No DOIL entries yet.</div>';
+
+    const alList = document.getElementById('al-list');
+    const alItems = recent5(alData.entries||[]);
+    alList.innerHTML = alItems.length
+      ? alItems.map(e => `<div class="entry-item al"><div class="ei-date">${e.startDate}${e.startDate!==e.endDate?' – '+e.endDate:''}</div><div class="ei-title">${e.hours}hrs Annual Leave</div><div class="ei-meta">${e.status}${e.notes?' · '+e.notes:''}</div></div>`).join('')
+      : '<div style="color:var(--gray);font-size:13px;padding:8px">No A/L entries yet.</div>';
+  } catch(e) { console.error('loadLeaveLists', e); }
+}
+
+// ── FORM HELPERS ──────────────────────────────────────────────
+let currentDayType = 'Rostered';
+let currentOTType  = 'DOIL';
+
+function setDayType(val, btn) {
+  currentDayType = val;
+  document.querySelectorAll('#f-daytype-group .toggle-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateOTTypeVisibility();
+  updatePreview();
+}
+
+function setOTType(val, btn) {
+  currentOTType = val;
+  document.querySelectorAll('#f-ottype-group .toggle-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function updateOTTypeVisibility() {
+  const row = document.getElementById('f-ot-type-row');
+  row.style.display = currentDayType === 'Non-Rostered' ? 'block' : 'none';
+  if (currentDayType === 'Rostered') currentOTType = 'DOIL';
+}
+
+function updatePreview() {
+  const start    = document.getElementById('f-start').value;
+  const end      = document.getElementById('f-end').value;
+  const startTZ  = document.getElementById('f-start-tz').value;
+  const endTZ    = document.getElementById('f-end-tz').value;
+  if (!start || !end) return;
+
+  const startMins = toMins(start) - (TZ_OFFSETS[startTZ]||0)*60;
+  let   endMins   = toMins(end)   - (TZ_OFFSETS[endTZ]  ||0)*60;
+  if (endMins <= startMins) endMins += 1440;
+  const total  = Math.round((endMins - startMins)/60 * 10)/10;
+  const ot     = Math.max(0, Math.round((total - 8) * 10)/10);
+  const prev   = document.getElementById('f-calc-preview');
+  const txt    = document.getElementById('f-calc-text');
+  prev.style.display = 'block';
+  txt.textContent = `${total}h worked · ${ot}h overtime${ot > 0 ? (currentDayType==='Rostered'?' → DOIL':' → '+currentOTType) : ' (standard day)'}`;
+}
+
+function toMins(t) {
+  const [h,m] = t.split(':').map(Number);
+  return h*60+m;
+}
+
+async function onDateChange() {
+  const date = document.getElementById('f-date').value;
+  if (!date || !authToken) return;
+  try {
+    const data = await apiGet('getRosterDay', { date });
+    const typeEl = document.getElementById('f-daytype-auto');
+    if (data.dayType && data.dayType !== 'Unknown') {
+      typeEl.textContent = `(auto: ${data.dayType} per roster)`;
+      const isRostered = data.dayType === 'Rostered';
+      currentDayType = isRostered ? 'Rostered' : 'Non-Rostered';
+      document.querySelectorAll('#f-daytype-group .toggle-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.val === currentDayType);
+      });
+      if (data.notes && data.notes !== data.dayType) {
+        const notesEl = document.getElementById('f-notes');
+        if (!notesEl.value) notesEl.value = data.notes;
+      }
+      updateOTTypeVisibility();
+    } else {
+      typeEl.textContent = '(not in roster)';
+    }
+  } catch(e) {}
+}
+
+// ── FORM SUBMISSION ───────────────────────────────────────────
+async function submitWorkEntry() {
+  const date   = document.getElementById('f-date').value;
+  const start  = document.getElementById('f-start').value;
+  const end    = document.getElementById('f-end').value;
+  if (!date || !start || !end) { showToast('Please fill in date and times'); return; }
+
+  const locSelect = document.getElementById('f-location').value;
+  const locText   = document.getElementById('f-location-text').value.trim();
+  const location  = locText || locSelect;
+
+  const data = {
+    date, startTime: start, endTime: end,
+    startTZ: document.getElementById('f-start-tz').value,
+    endTZ:   document.getElementById('f-end-tz').value,
+    dayType: currentDayType, location,
+    otType:  currentDayType === 'Rostered' ? 'DOIL' : currentOTType,
+    notes:   document.getElementById('f-notes').value
+  };
+
+  try {
+    if (isOnline && authToken) {
+      const res = await apiPost('addWorkEntry', data);
+      if (res.ok) {
+        showToast(`✓ Saved! ${res.otHours}h overtime`);
+        resetLogForm();
+        await Promise.all([loadSummary(), loadEntries()]);
+      } else {
+        throw new Error(res.error);
+      }
+    } else {
+      await queueEntry('addWorkEntry', data);
+      showToast('Saved offline — will sync when connected');
+      resetLogForm();
+    }
+  } catch(e) {
+    showToast('Error: ' + e.message);
+  }
+}
+
+function resetLogForm() {
+  document.getElementById('f-start').value   = '09:00';
+  document.getElementById('f-end').value     = '18:00';
+  document.getElementById('f-notes').value   = '';
+  document.getElementById('f-location-text').value = '';
+  document.getElementById('f-location').value = '';
+  document.getElementById('f-calc-preview').style.display = 'none';
+  document.getElementById('f-daytype-auto').textContent = '';
+}
+
+async function submitDOIL() {
+  const date  = document.getElementById('doil-date').value;
+  const hours = document.getElementById('doil-hours').value || 8;
+  const notes = document.getElementById('doil-notes').value;
+  if (!date) { showToast('Please select a date'); return; }
+
+  const data = { date, hours: parseFloat(hours), status: 'Pending', notes };
+  try {
+    if (isOnline && authToken) {
+      const res = await apiPost('addDOIL', data);
+      if (res.ok) {
+        showToast('✓ DOIL day logged');
+        hideModal('doil-modal');
+        await Promise.all([loadSummary(), loadLeaveLists()]);
+      } else throw new Error(res.error);
+    } else {
+      await queueEntry('addDOIL', data);
+      showToast('Saved offline');
+      hideModal('doil-modal');
+    }
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function submitAL() {
+  const start = document.getElementById('al-start').value;
+  const end   = document.getElementById('al-end').value;
+  const hours = document.getElementById('al-hours').value;
+  const notes = document.getElementById('al-notes').value;
+  if (!start || !end) { showToast('Please select dates'); return; }
+
+  const data = { startDate: start, endDate: end, hours: hours ? parseFloat(hours) : null, status: 'Pending', notes };
+  try {
+    if (isOnline && authToken) {
+      const res = await apiPost('addAL', data);
+      if (res.ok) {
+        showToast('✓ Annual leave logged');
+        hideModal('al-modal');
+        await Promise.all([loadSummary(), loadLeaveLists()]);
+      } else throw new Error(res.error);
+    } else {
+      await queueEntry('addAL', data);
+      showToast('Saved offline');
+      hideModal('al-modal');
+    }
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+}
+
+function showModal(id) {
+  document.getElementById(id).classList.add('show');
+}
+function hideModal(id) {
+  document.getElementById(id).classList.remove('show');
+}
+
+function showToast(msg, duration=2800) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function setSyncStatus(msg) {
+  const el = document.getElementById('sync-status');
+  el.textContent = msg;
+  el.className = 'sync-status pending';
+}
+
+function updateOnlineStatus() {
+  const banner = document.getElementById('offline-banner');
+  banner.classList.toggle('show', !isOnline);
+}
+
+// Close modals when clicking overlay
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) hideModal(overlay.id);
+  });
+});
+</script>
+</body>
+</html>
