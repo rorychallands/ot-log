@@ -262,7 +262,7 @@
       <div class="section-title">DOIL Balance</div>
       <div class="cards">
         <div class="card navy">
-          <div class="label">Available</div>
+          <div class="label">Accrued</div>
           <div class="value" id="s-doil-avail">–</div>
           <div class="sub">days</div>
         </div>
@@ -371,27 +371,7 @@
       </div>
       <div class="form-row">
         <label>Location / Deployment</label>
-        <select id="f-location">
-          <option value="">Select or type below…</option>
-          <option>London</option>
-          <option>Ukraine</option>
-          <option>Greenland</option>
-          <option>Bosnia</option>
-          <option>Doha</option>
-          <option>Jordan</option>
-          <option>Belfast / Northern Ireland</option>
-          <option>Ireland</option>
-          <option>Germany / Berlin</option>
-          <option>France / Paris</option>
-          <option>Brussels</option>
-          <option>Vienna</option>
-          <option>Warsaw</option>
-          <option>Travel</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label>Location (free text)</label>
-        <input type="text" id="f-location-text" placeholder="Or type location here">
+        <input type="text" id="f-location-text" placeholder="e.g. London, Ukraine, Jordan…">
       </div>
 
       <div id="f-ot-type-row" class="form-row" style="display:none">
@@ -412,7 +392,7 @@
         <textarea id="f-notes" placeholder="Deployment name, context…"></textarea>
       </div>
     </div>
-    <button class="btn btn-primary" onclick="submitWorkEntry()">Save Entry</button>
+    <button class="btn btn-primary" id="save-btn" onclick="submitWorkEntry()">Save Entry</button>
   </div>
 
   <!-- ── SCREEN: LEAVE & DOIL ──────────────────────────── -->
@@ -744,19 +724,40 @@ function formatDays(n) {
 // ── LOAD ENTRIES ──────────────────────────────────────────────
 async function loadEntries() {
   const now = new Date();
+  const thisYear  = now.getFullYear();
+  const thisMonth = now.getMonth() + 1;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastYear  = lastMonthDate.getFullYear();
+  const lastMonth = lastMonthDate.getMonth() + 1;
+
+  const renderEntries = (entries) => entries.map(e => `
+    <div class="entry-item ${e.otType === 'DOIL' ? 'doil' : 'paid'}">
+      <div class="ei-date">${e.date} · ${e.dayType}</div>
+      <div class="ei-title">${e.location || 'No location'}</div>
+      <div class="ei-meta">${e.startTime}–${e.endTime} ${e.startTZ} · <strong>${e.otHours}hrs OT</strong> · ${e.otType}${e.notes ? ' · ' + e.notes.substring(0,40) : ''}</div>
+    </div>`).join('');
+
+  const monthName = (y, m) => new Date(y, m-1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+
   try {
-    const data = await apiGet('getMonthSummary', { year: now.getFullYear(), month: now.getMonth()+1 });
+    const [thisData, lastData] = await Promise.all([
+      apiGet('getMonthSummary', { year: thisYear,  month: thisMonth }),
+      apiGet('getMonthSummary', { year: lastYear,  month: lastMonth })
+    ]);
     const list = document.getElementById('entries-list');
-    if (!data.ok || !data.entries.length) {
-      list.innerHTML = '<div style="color:var(--gray);font-size:13px;padding:8px">No entries this month yet.</div>';
-      return;
-    }
-    list.innerHTML = data.entries.map(e => `
-      <div class="entry-item ${e.otType === 'DOIL' ? 'doil' : 'paid'}">
-        <div class="ei-date">${e.date} · ${e.dayType}</div>
-        <div class="ei-title">${e.location || 'No location'}</div>
-        <div class="ei-meta">${e.startTime}–${e.endTime} ${e.startTZ} · <strong>${e.otHours}hrs OT</strong> · ${e.otType}${e.notes ? ' · ' + e.notes.substring(0,40) : ''}</div>
-      </div>`).join('');
+    let html = '';
+
+    html += `<div class="section-title" style="margin-top:0">${monthName(thisYear, thisMonth)}</div>`;
+    html += thisData.ok && thisData.entries.length
+      ? renderEntries(thisData.entries)
+      : '<div style="color:var(--gray);font-size:13px;padding:8px">No entries this month yet.</div>';
+
+    html += `<div class="section-title">${monthName(lastYear, lastMonth)}</div>`;
+    html += lastData.ok && lastData.entries.length
+      ? renderEntries(lastData.entries)
+      : '<div style="color:var(--gray);font-size:13px;padding:8px">No entries last month.</div>';
+
+    list.innerHTML = html;
   } catch(e) { console.error('loadEntries', e); }
 }
 
@@ -858,9 +859,7 @@ async function submitWorkEntry() {
   const end    = document.getElementById('f-end').value;
   if (!date || !start || !end) { showToast('Please fill in date and times'); return; }
 
-  const locSelect = document.getElementById('f-location').value;
-  const locText   = document.getElementById('f-location-text').value.trim();
-  const location  = locText || locSelect;
+  const location = document.getElementById('f-location-text').value.trim();
 
   const data = {
     date, startTime: start, endTime: end,
@@ -871,11 +870,17 @@ async function submitWorkEntry() {
     notes:   document.getElementById('f-notes').value
   };
 
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
   try {
     if (isOnline && authToken) {
       const res = await apiPost('addWorkEntry', data);
       if (res.ok) {
-        showToast(`✓ Saved! ${res.otHours}h overtime`);
+        btn.textContent = '✓ Saved!';
+        btn.style.background = '#2e7d32';
+        showToast(`Entry saved — ${res.otHours}h overtime logged`);
         resetLogForm();
         await Promise.all([loadSummary(), loadEntries()]);
       } else {
@@ -883,12 +888,25 @@ async function submitWorkEntry() {
       }
     } else {
       await queueEntry('addWorkEntry', data);
+      btn.textContent = '✓ Queued offline';
+      btn.style.background = '#b45309';
       showToast('Saved offline — will sync when connected');
       resetLogForm();
     }
   } catch(e) {
+    btn.textContent = '✗ Error — try again';
+    btn.style.background = '#c62828';
+    btn.disabled = false;
     showToast('Error: ' + e.message);
+    return;
   }
+
+  // Reset button after 3 seconds
+  setTimeout(() => {
+    btn.textContent = 'Save Entry';
+    btn.style.background = '';
+    btn.disabled = false;
+  }, 3000);
 }
 
 function resetLogForm() {
@@ -896,7 +914,6 @@ function resetLogForm() {
   document.getElementById('f-end').value     = '18:00';
   document.getElementById('f-notes').value   = '';
   document.getElementById('f-location-text').value = '';
-  document.getElementById('f-location').value = '';
   document.getElementById('f-calc-preview').style.display = 'none';
   document.getElementById('f-daytype-auto').textContent = '';
 }
