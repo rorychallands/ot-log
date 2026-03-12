@@ -692,23 +692,21 @@ async function showApp() {
 }
 
 // ── API CALLS ─────────────────────────────────────────────────
+// Note: No Authorization header sent — Apps Script runs as owner so has
+// spreadsheet access already. Omitting custom headers avoids CORS preflight.
 async function apiGet(action, params={}) {
   const url = new URL(APPS_SCRIPT_URL);
   url.searchParams.set('action', action);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
-  const res = await fetch(url, {
-    headers: authToken ? { Authorization: 'Bearer ' + authToken } : {}
-  });
+  const res = await fetch(url);
   return res.json();
 }
 
 async function apiPost(action, data) {
+  // Use text/plain to avoid CORS preflight — Apps Script can still parse JSON body
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(authToken ? { Authorization: 'Bearer ' + authToken } : {})
-    },
+    headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ action, data })
   });
   return res.json();
