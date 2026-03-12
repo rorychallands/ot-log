@@ -694,9 +694,14 @@ async function apiPost(action, data) {
 
 // ── LOAD SUMMARY ─────────────────────────────────────────────
 async function loadSummary() {
+  const loadingEl = document.getElementById('summary-loading');
   try {
+    loadingEl.textContent = 'Loading…';
     const data = await apiGet('getSummary');
-    if (!data.ok) return;
+    if (!data.ok) {
+      loadingEl.innerHTML = `<span style="color:#c62828">⚠️ API error: ${data.error || 'unknown'}</span>`;
+      return;
+    }
     const d = data.doil, al = data.al;
     document.getElementById('s-doil-avail').textContent   = d.balanceDays >= 0 ? d.totalAvail/8 : '–';
     document.getElementById('s-doil-bal').textContent     = formatDays(d.balanceDays);
@@ -706,12 +711,14 @@ async function loadSummary() {
     document.getElementById('s-al-rem').textContent       = formatDays(al.remainingDays);
     document.getElementById('s-al-taken').textContent     = formatDays(al.taken/8);
     document.getElementById('s-paid-hrs').textContent     = data.paid.hours2026 + 'h';
-    document.getElementById('summary-loading').style.display = 'none';
+    loadingEl.style.display = 'none';
     document.getElementById('summary-content').style.display = 'block';
-    // Colour the balance red if low
     const balEl = document.getElementById('s-doil-bal');
     balEl.closest('.card').className = 'card ' + (d.balanceDays <= 8 ? 'amber' : 'green');
-  } catch(e) { console.error('loadSummary', e); }
+  } catch(e) {
+    loadingEl.innerHTML = `<span style="color:#c62828">⚠️ Could not reach server: ${e.message}</span>`;
+    console.error('loadSummary', e);
+  }
 }
 
 function formatDays(n) {
