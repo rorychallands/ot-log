@@ -164,6 +164,41 @@
   .entry-item .ei-title { font-size: 14px; font-weight: 600; margin: 3px 0; }
   .entry-item .ei-meta  { font-size: 12px; color: var(--gray); }
 
+  /* ── INLINE EDIT ─────────────────────────────────────── */
+  .entry-item { cursor: pointer; transition: box-shadow 0.15s; }
+  .entry-item:active { transform: scale(0.99); }
+  .ei-row { display: flex; align-items: flex-start; justify-content: space-between; }
+  .ei-info { flex: 1; min-width: 0; }
+  .ei-chevron {
+    font-size: 18px; color: var(--border); padding-left: 8px;
+    transition: transform 0.2s; flex-shrink: 0; line-height: 1.6;
+  }
+  .entry-item.expanded { box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+  .entry-item.expanded .ei-chevron { transform: rotate(90deg); color: var(--navy); }
+  .edit-panel { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .entry-item.expanded .edit-panel { display: block; }
+  .edit-field-row { margin-bottom: 10px; }
+  .edit-field-row label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--gray);
+    margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .edit-field-row input {
+    width: 100%; padding: 9px 10px; border: 1.5px solid var(--border);
+    border-radius: 6px; font-size: 15px; background: white; color: #222;
+    -webkit-appearance: none; appearance: none;
+  }
+  .edit-field-row input:focus { outline: none; border-color: var(--blue); }
+  .edit-field-row .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .edit-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn-sm {
+    padding: 8px 14px; border-radius: 8px; border: none;
+    font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+  }
+  .btn-sm-ok     { background: var(--green); color: white; }
+  .btn-sm-danger { background: var(--red);   color: white; }
+  .btn-sm-cancel { background: var(--light); color: var(--gray); border: 1px solid var(--border); }
+  .entries-hint { font-size: 11px; color: var(--gray); text-align: right; margin-bottom: 6px; }
+
   /* ── OFFLINE BANNER ──────────────────────────────────── */
   .offline-banner {
     background: var(--amber); color: white;
@@ -423,6 +458,7 @@
   <!-- ── SCREEN: RECENT ENTRIES ────────────────────────── -->
   <div class="screen" id="screen-entries">
     <div class="section-title">This Month's OT Entries</div>
+    <div class="entries-hint">Tap an entry to edit or delete</div>
     <div class="entry-list" id="entries-list">
       <div style="color:var(--gray);font-size:13px;padding:8px">Loading…</div>
     </div>
@@ -692,6 +728,16 @@ async function apiPost(action, data) {
   return res.json();
 }
 
+// For edit/delete calls that need a custom body shape (id + data separately)
+async function apiPostRaw(body) {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
 // ── LOAD SUMMARY ─────────────────────────────────────────────
 async function loadSummary() {
   const loadingEl = document.getElementById('summary-loading');
@@ -728,6 +774,108 @@ function formatDays(n) {
   return rounded.toFixed(1);
 }
 
+// ── RENDER HELPERS ────────────────────────────────────────────
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function renderWorkEntry(e) {
+  const cls   = e.otType === 'DOIL' ? 'doil' : 'paid';
+  const id    = e.id;
+  const loc   = esc(e.location);
+  const notes = esc(e.notes);
+  return `<div class="entry-item ${cls}" id="wentry-${id}" onclick="toggleEntryExpand(event,'wentry-${id}')">
+    <div class="ei-row">
+      <div class="ei-info">
+        <div class="ei-date">${e.date} · ${e.dayType}</div>
+        <div class="ei-title">${e.location || 'No location'}</div>
+        <div class="ei-meta">${e.startTime}–${e.endTime} ${e.startTZ} · <strong>${e.otHours}h OT</strong> · ${e.otType}${e.notes ? ' · ' + e.notes.substring(0,40) : ''}</div>
+      </div>
+      <div class="ei-chevron">›</div>
+    </div>
+    <div class="edit-panel">
+      <div class="edit-field-row">
+        <label>Location</label>
+        <input type="text" class="ef-loc" value="${loc}">
+      </div>
+      <div class="edit-field-row">
+        <div class="row-2">
+          <div><label>Start</label><input type="time" class="ef-start" value="${e.startTime || ''}"></div>
+          <div><label>End</label><input type="time" class="ef-end" value="${e.endTime || ''}"></div>
+        </div>
+      </div>
+      <div class="edit-field-row">
+        <label>Notes</label>
+        <input type="text" class="ef-notes" value="${notes}">
+      </div>
+      <div class="edit-actions">
+        <button class="btn-sm btn-sm-ok"     onclick="saveWorkEdit(event,'${id}')">Save</button>
+        <button class="btn-sm btn-sm-danger"  onclick="deleteWorkEntry(event,'${id}')">Delete</button>
+        <button class="btn-sm btn-sm-cancel"  onclick="collapseEntry(event,'wentry-${id}')">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderDoilEntry(e) {
+  const id    = e.id;
+  const notes = esc(e.notes);
+  return `<div class="entry-item doil" id="dentry-${id}" onclick="toggleEntryExpand(event,'dentry-${id}')">
+    <div class="ei-row">
+      <div class="ei-info">
+        <div class="ei-date">${e.date}</div>
+        <div class="ei-title">${e.hours}h DOIL</div>
+        <div class="ei-meta">${e.status}${e.notes ? ' · ' + e.notes : ''}</div>
+      </div>
+      <div class="ei-chevron">›</div>
+    </div>
+    <div class="edit-panel">
+      <div class="edit-field-row">
+        <label>Hours</label>
+        <input type="number" class="ef-hours" value="${e.hours}" min="1" max="16" step="0.5">
+      </div>
+      <div class="edit-field-row">
+        <label>Notes</label>
+        <input type="text" class="ef-notes" value="${notes}">
+      </div>
+      <div class="edit-actions">
+        <button class="btn-sm btn-sm-ok"     onclick="saveDoilEdit(event,'${id}')">Save</button>
+        <button class="btn-sm btn-sm-danger"  onclick="deleteDoilEntry(event,'${id}')">Delete</button>
+        <button class="btn-sm btn-sm-cancel"  onclick="collapseEntry(event,'dentry-${id}')">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderAlEntry(e) {
+  const id    = e.id;
+  const notes = esc(e.notes);
+  const dates = e.startDate + (e.startDate !== e.endDate ? ' – ' + e.endDate : '');
+  return `<div class="entry-item al" id="alentry-${id}" onclick="toggleEntryExpand(event,'alentry-${id}')">
+    <div class="ei-row">
+      <div class="ei-info">
+        <div class="ei-date">${dates}</div>
+        <div class="ei-title">${e.hours}h Annual Leave</div>
+        <div class="ei-meta">${e.status}${e.notes ? ' · ' + e.notes : ''}</div>
+      </div>
+      <div class="ei-chevron">›</div>
+    </div>
+    <div class="edit-panel">
+      <div class="edit-field-row">
+        <label>Hours</label>
+        <input type="number" class="ef-hours" value="${e.hours}" min="1" step="0.5">
+      </div>
+      <div class="edit-field-row">
+        <label>Notes</label>
+        <input type="text" class="ef-notes" value="${notes}">
+      </div>
+      <div class="edit-actions">
+        <button class="btn-sm btn-sm-ok"     onclick="saveAlEdit(event,'${id}')">Save</button>
+        <button class="btn-sm btn-sm-danger"  onclick="deleteAlEntry(event,'${id}')">Delete</button>
+        <button class="btn-sm btn-sm-cancel"  onclick="collapseEntry(event,'alentry-${id}')">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ── LOAD ENTRIES ──────────────────────────────────────────────
 async function loadEntries() {
   const now = new Date();
@@ -736,13 +884,6 @@ async function loadEntries() {
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastYear  = lastMonthDate.getFullYear();
   const lastMonth = lastMonthDate.getMonth() + 1;
-
-  const renderEntries = (entries) => entries.map(e => `
-    <div class="entry-item ${e.otType === 'DOIL' ? 'doil' : 'paid'}">
-      <div class="ei-date">${e.date} · ${e.dayType}</div>
-      <div class="ei-title">${e.location || 'No location'}</div>
-      <div class="ei-meta">${e.startTime}–${e.endTime} ${e.startTZ} · <strong>${e.otHours}hrs OT</strong> · ${e.otType}${e.notes ? ' · ' + e.notes.substring(0,40) : ''}</div>
-    </div>`).join('');
 
   const monthName = (y, m) => new Date(y, m-1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
 
@@ -756,12 +897,12 @@ async function loadEntries() {
 
     html += `<div class="section-title" style="margin-top:0">${monthName(thisYear, thisMonth)}</div>`;
     html += thisData.ok && thisData.entries.length
-      ? renderEntries(thisData.entries)
+      ? thisData.entries.map(renderWorkEntry).join('')
       : '<div style="color:var(--gray);font-size:13px;padding:8px">No entries this month yet.</div>';
 
     html += `<div class="section-title">${monthName(lastYear, lastMonth)}</div>`;
     html += lastData.ok && lastData.entries.length
-      ? renderEntries(lastData.entries)
+      ? lastData.entries.map(renderWorkEntry).join('')
       : '<div style="color:var(--gray);font-size:13px;padding:8px">No entries last month.</div>';
 
     list.innerHTML = html;
@@ -774,16 +915,16 @@ async function loadLeaveLists() {
     const [doilData, alData] = await Promise.all([apiGet('getDOILLog'), apiGet('getALLog')]);
     const recent5 = arr => arr.slice(-5).reverse();
 
-    const doilList = document.getElementById('doil-list');
+    const doilList  = document.getElementById('doil-list');
     const doilItems = recent5(doilData.entries||[]);
     doilList.innerHTML = doilItems.length
-      ? doilItems.map(e => `<div class="entry-item doil"><div class="ei-date">${e.date}</div><div class="ei-title">${e.hours}hrs DOIL</div><div class="ei-meta">${e.status}${e.notes?' · '+e.notes:''}</div></div>`).join('')
+      ? doilItems.map(renderDoilEntry).join('')
       : '<div style="color:var(--gray);font-size:13px;padding:8px">No DOIL entries yet.</div>';
 
-    const alList = document.getElementById('al-list');
+    const alList  = document.getElementById('al-list');
     const alItems = recent5(alData.entries||[]);
     alList.innerHTML = alItems.length
-      ? alItems.map(e => `<div class="entry-item al"><div class="ei-date">${e.startDate}${e.startDate!==e.endDate?' – '+e.endDate:''}</div><div class="ei-title">${e.hours}hrs Annual Leave</div><div class="ei-meta">${e.status}${e.notes?' · '+e.notes:''}</div></div>`).join('')
+      ? alItems.map(renderAlEntry).join('')
       : '<div style="color:var(--gray);font-size:13px;padding:8px">No A/L entries yet.</div>';
   } catch(e) { console.error('loadLeaveLists', e); }
 }
@@ -1011,6 +1152,129 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
     if (e.target === overlay) hideModal(overlay.id);
   });
 });
+
+// ── INLINE EDIT / DELETE ──────────────────────────────────────
+
+function toggleEntryExpand(event, itemId) {
+  // Don't toggle if a button inside was clicked
+  if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT') return;
+  const el = document.getElementById(itemId);
+  if (!el) return;
+  const wasExpanded = el.classList.contains('expanded');
+  // Collapse everything else first
+  document.querySelectorAll('.entry-item.expanded').forEach(e => e.classList.remove('expanded'));
+  if (!wasExpanded) el.classList.add('expanded');
+}
+
+function collapseEntry(event, itemId) {
+  event.stopPropagation();
+  const el = document.getElementById(itemId);
+  if (el) el.classList.remove('expanded');
+}
+
+// ── WORK ENTRY EDIT/DELETE ────────────────────────────────────
+
+async function saveWorkEdit(event, id) {
+  event.stopPropagation();
+  const el    = document.getElementById('wentry-' + id);
+  const loc   = el.querySelector('.ef-loc').value;
+  const start = el.querySelector('.ef-start').value;
+  const end   = el.querySelector('.ef-end').value;
+  const notes = el.querySelector('.ef-notes').value;
+  const btn   = event.target;
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  try {
+    const res = await apiPostRaw({ action: 'editWorkEntry', id, data: { location: loc, startTime: start, endTime: end, notes } });
+    if (res.ok) {
+      showToast('✓ Entry updated');
+      el.classList.remove('expanded');
+      await Promise.all([loadEntries(), loadSummary()]);
+    } else throw new Error(res.error);
+  } catch(e) {
+    showToast('Error: ' + e.message);
+    btn.textContent = 'Save'; btn.disabled = false;
+  }
+}
+
+async function deleteWorkEntry(event, id) {
+  event.stopPropagation();
+  if (!confirm('Delete this entry? This cannot be undone.')) return;
+  try {
+    const res = await apiPostRaw({ action: 'deleteWorkEntry', id });
+    if (res.ok) {
+      showToast('Entry deleted');
+      await Promise.all([loadEntries(), loadSummary()]);
+    } else throw new Error(res.error);
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+// ── DOIL EDIT/DELETE ──────────────────────────────────────────
+
+async function saveDoilEdit(event, id) {
+  event.stopPropagation();
+  const el    = document.getElementById('dentry-' + id);
+  const hours = el.querySelector('.ef-hours').value;
+  const notes = el.querySelector('.ef-notes').value;
+  const btn   = event.target;
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  try {
+    const res = await apiPostRaw({ action: 'editDOIL', id, data: { hours: parseFloat(hours), notes } });
+    if (res.ok) {
+      showToast('✓ DOIL updated');
+      el.classList.remove('expanded');
+      await Promise.all([loadLeaveLists(), loadSummary()]);
+    } else throw new Error(res.error);
+  } catch(e) {
+    showToast('Error: ' + e.message);
+    btn.textContent = 'Save'; btn.disabled = false;
+  }
+}
+
+async function deleteDoilEntry(event, id) {
+  event.stopPropagation();
+  if (!confirm('Delete this DOIL entry?')) return;
+  try {
+    const res = await apiPostRaw({ action: 'deleteDOIL', id });
+    if (res.ok) {
+      showToast('DOIL entry deleted');
+      await Promise.all([loadLeaveLists(), loadSummary()]);
+    } else throw new Error(res.error);
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+// ── ANNUAL LEAVE EDIT/DELETE ──────────────────────────────────
+
+async function saveAlEdit(event, id) {
+  event.stopPropagation();
+  const el    = document.getElementById('alentry-' + id);
+  const hours = el.querySelector('.ef-hours').value;
+  const notes = el.querySelector('.ef-notes').value;
+  const btn   = event.target;
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  try {
+    const res = await apiPostRaw({ action: 'editAL', id, data: { hours: parseFloat(hours), notes } });
+    if (res.ok) {
+      showToast('✓ A/L updated');
+      el.classList.remove('expanded');
+      await Promise.all([loadLeaveLists(), loadSummary()]);
+    } else throw new Error(res.error);
+  } catch(e) {
+    showToast('Error: ' + e.message);
+    btn.textContent = 'Save'; btn.disabled = false;
+  }
+}
+
+async function deleteAlEntry(event, id) {
+  event.stopPropagation();
+  if (!confirm('Delete this annual leave entry?')) return;
+  try {
+    const res = await apiPostRaw({ action: 'deleteAL', id });
+    if (res.ok) {
+      showToast('A/L entry deleted');
+      await Promise.all([loadLeaveLists(), loadSummary()]);
+    } else throw new Error(res.error);
+  } catch(e) { showToast('Error: ' + e.message); }
+}
 </script>
 </body>
 </html>
