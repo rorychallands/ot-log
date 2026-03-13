@@ -1,5 +1,5 @@
 // Service Worker — Overtime & Leave Log PWA
-const CACHE_NAME = 'ot-log-v3';
+const CACHE_NAME = 'ot-log-v4';
 const OFFLINE_URL = 'index.html';
 
 // Install: cache the app shell
